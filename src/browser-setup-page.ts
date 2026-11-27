@@ -116,7 +116,8 @@ function issueText(issue: BrowserSetupIssue | undefined, t: typeof copy[SetupLan
   if (!issue) return ''
   if (issue.kind === 'upstream') return `${t.upstreamError} (HTTP ${issue.status}${issue.type ? `, ${escape(issue.type)}` : ''}${issue.detail ? ` — ${escape(issue.detail)}` : ''}).`
   if (issue.kind === 'generic') return `${t.genericError}${issue.detail ? ` — ${escape(issue.detail)}` : ''}`
-  return issue.kind === 'manual_check' ? t.manualCheck : t.invalidStep
+  if (issue.kind === 'manual_check') return `${t.manualCheck}${issue.detail ? ` \u2014 ${escape(issue.detail)}` : ''}`
+  return t.invalidStep
 }
 
 const styles = `<style>

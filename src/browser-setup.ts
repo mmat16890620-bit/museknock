@@ -31,7 +31,7 @@ export type BrowserSetupSession = {
 export type BrowserSetupIssue =
   | { kind: 'upstream'; status: number; type?: string; detail?: string }
   | { kind: 'generic'; detail?: string }
-  | { kind: 'manual_check' | 'invalid_step' }
+  | { kind: 'manual_check' | 'invalid_step'; detail?: string }
 
 class AuthError extends Error {
   constructor(readonly status: number, readonly problem: Json) {
@@ -140,6 +140,15 @@ export async function encryptWebPassword(password: string, keyId: number, public
   }
 }
 
+function manualCheckDetail(data: Json): string {
+  const flags = ['checkpoint_required', 'checkpoint_url', 'reactivation_required', 'account_selection_required']
+    .filter(name => data[name])
+  const state = typeof data.registration_state === 'string' ? data.registration_state : 'none'
+  const accounts = Array.isArray(data.accounts) ? String(data.accounts.length) : 'none'
+  const keys = Object.keys(data).join(',').slice(0, 200)
+  return `flags: ${flags.join(',') || 'none'}; state: ${state}; accounts: ${accounts}; keys: ${keys}`
+}
+
 async function acceptCredentials(session: BrowserSetupSession, data: Json, sdkToken: string, request: Request,
   otpCode?: string, selectionAttempted = false) {
   if (data.registration_state === 'account_selection_required' && Array.isArray(data.accounts)) {
@@ -147,7 +156,7 @@ async function acceptCredentials(session: BrowserSetupSession, data: Json, sdkTo
     const accountId = accounts[accounts.length - 1]?.account_id
     if (selectionAttempted || (typeof accountId !== 'string' && typeof accountId !== 'number')) {
       session.stage = 'error'
-      session.error = { kind: 'manual_check' }
+      session.error = { kind: 'manual_check', detail: manualCheckDetail(data) }
       return { session }
     }
     const selected = await postWeb(session, '/api/auth/native/select-account', { account_id: accountId }, request)
@@ -155,7 +164,7 @@ async function acceptCredentials(session: BrowserSetupSession, data: Json, sdkTo
   }
   if (data.checkpoint_required || data.checkpoint_url || data.reactivation_required || data.account_selection_required) {
     session.stage = 'error'
-    session.error = { kind: 'manual_check' }
+    session.error = { kind: 'manual_check', detail: manualCheckDetail(data) }
     return { session }
   }
   if (data.two_factor_required) {
