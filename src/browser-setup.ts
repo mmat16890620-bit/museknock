@@ -31,7 +31,7 @@ export type BrowserSetupSession = {
 export type BrowserSetupIssue =
   | { kind: 'upstream'; status: number; type?: string; detail?: string }
   | { kind: 'generic'; detail?: string }
-  | { kind: 'manual_check' | 'invalid_step'; detail?: string }
+  | { kind: 'manual_check' | 'invalid_step'; detail?: string; checkpointUrl?: string }
 
 class AuthError extends Error {
   constructor(readonly status: number, readonly problem: Json) {
@@ -165,7 +165,7 @@ async function acceptCredentials(session: BrowserSetupSession, data: Json, sdkTo
   }
   if (data.checkpoint_required || data.checkpoint_url || data.reactivation_required || data.account_selection_required) {
     session.stage = 'error'
-    session.error = { kind: 'manual_check', detail: manualCheckDetail(data) }
+    session.error = { kind: 'manual_check', detail: manualCheckDetail(data), checkpointUrl: typeof data.checkpoint_url === 'string' ? data.checkpoint_url : undefined }
     return { session }
   }
   if (data.two_factor_required) {

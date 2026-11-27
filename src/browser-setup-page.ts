@@ -138,6 +138,8 @@ export function browserSetupPage(view: BrowserSetupView, initial = false, lang: 
   const title = view.stage === 'contact' ? t.contact : view.stage === 'done' ? t.done : t.verify
   const target = initial ? `?lang=${lang}` : `/v1/setup/browser?lang=${lang}`
   const error = view.error ? `<p class="alert" role="alert">${issueText(view.error, t)}</p>` : ''
+  const checkpointUrl = view.error?.kind === 'manual_check' ? view.error.checkpointUrl : undefined
+  const checkpointLink = checkpointUrl ? `<p><a href="${escape(checkpointUrl)}" style="display:block;text-align:center;padding:14px 16px;border-radius:999px;background:#4b93ff;color:#fff;text-decoration:none;font-weight:600">本人確認を開く / Open verification</a></p>` : ''
   let content = ''
   if (view.stage === 'contact') {
     content = `<form method="post" action="${target}"><label for="contact">${t.contactLabel}<input id="contact" name="contact" autocomplete="username" required maxlength="256"></label><label for="region">${t.regionLabel}<input id="region" name="region" value="JP" maxlength="2" pattern="[A-Za-z]{2}" autocapitalize="characters"></label><button type="submit">${t.contactButton}</button></form>`
@@ -156,7 +158,7 @@ export function browserSetupPage(view: BrowserSetupView, initial = false, lang: 
   const expires = new Date(view.expiresAt).toLocaleString(lang, { timeZone: 'Asia/Tokyo', dateStyle: 'medium', timeStyle: 'short' })
   const languageLinks = ([['en', 'English'], ['zh-CN', '中文'], ['ja', '日本語']] as const).map(([code, name]) =>
     `<a href="?lang=${code}" lang="${code}"${code === lang ? ' aria-current="page"' : ''}>${name}</a>`).join('')
-  return `<!doctype html><html lang="${lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title} · MuseKnock</title>${styles}</head><body><div class="wrap"><header class="top"><div class="brand">MuseKnock</div><nav class="langs" aria-label="${t.languageLabel}">${languageLinks}</nav></header><main class="card"><div class="inner"><h1>${title}</h1>${error}${content}</div><div class="meta"><div><span>${t.device}</span><code>${escape(view.nodeId)}</code></div><div><span>${t.expires}</span><span>${escape(expires)} JST</span></div></div></main><p class="disclosure">${t.disclosureLead}<br>${t.disclosureDetail}</p></div></body></html>`
+  return `<!doctype html><html lang="${lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title} · MuseKnock</title>${styles}</head><body><div class="wrap"><header class="top"><div class="brand">MuseKnock</div><nav class="langs" aria-label="${t.languageLabel}">${languageLinks}</nav></header><main class="card"><div class="inner"><h1>${title}</h1>${error}${checkpointLink}${content}</div><div class="meta"><div><span>${t.device}</span><code>${escape(view.nodeId)}</code></div><div><span>${t.expires}</span><span>${escape(expires)} JST</span></div></div></main><p class="disclosure">${t.disclosureLead}<br>${t.disclosureDetail}</p></div></body></html>`
 }
 
 export const browserSetupHeaders = {
