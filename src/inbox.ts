@@ -588,22 +588,25 @@ export class Inbox extends DurableObject<MuseBindings> {
       const leases = await this.resolveLeases(device)
       const candidates = vmId === null ? leases : leases.filter(lease => lease.vmId === vmId)
       if (!candidates.length) return { error: 'The registered Muse VM is no longer leased to this device.' }
-      let incomplete = false
+      const failures: string[] = []
       for (const vm of candidates) {
         try {
           if (await sideChatExists(vm, sessionId)) return { vmId: vm.vmId }
-        } catch {
-          incomplete = true
+          failures.push(`${vm.vmId.slice(0, 8)}: not found`)
+        } catch (error) {
+          failures.push(`${vm.vmId.slice(0, 8)}: ${error instanceof Error ? error.message.slice(0, 60) : 'unknown'}`)
         }
       }
-      if (!incomplete) return { error: vmId === null
-        ? 'Side chat not found on any leased Muse VM. Check the session ID.'
-        : 'Side chat not found on the selected Muse VM. Check the session ID.' }
-    } catch {
+      if (vmId !== null) return { error: 'Side chat not found on the selected Muse VM. Check the session ID.' }
+      return { error: `Could not verify the side chat on any leased VM (${candidates.length} tried). ${failures.join('; ')}` }
+    } catch (error) {
       if (this.ctx.storage.kv.get(`rejected:${this.pairing}`))
         return { error: 'Muse rejected the saved device credentials. Start pairing again to check recovery options.' }
+      const detail = error instanceof Error
+        ? error.message.replace(/[\u0000-\u001f\u007f]+/g, ' ').trim().slice(0, 160)
+        : 'unknown error'
+      return { error: `Could not verify the side chat with Muse. Check the device and VM lease, then retry. (${detail})` }
     }
-    return { error: 'Could not verify the side chat with Muse. Check the device and VM lease, then retry.' }
   }
 
   async registerSideChat(name: string, sessionId: string) {

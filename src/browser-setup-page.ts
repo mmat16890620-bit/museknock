@@ -114,8 +114,9 @@ export function setupFailureText(lang: SetupLanguage, reason: keyof typeof failu
 
 function issueText(issue: BrowserSetupIssue | undefined, t: typeof copy[SetupLanguage]): string {
   if (!issue) return ''
-  if (issue.kind === 'upstream') return `${t.upstreamError} (HTTP ${issue.status}${issue.type ? `, ${escape(issue.type)}` : ''}).`
-  return issue.kind === 'manual_check' ? t.manualCheck : issue.kind === 'invalid_step' ? t.invalidStep : t.genericError
+  if (issue.kind === 'upstream') return `${t.upstreamError} (HTTP ${issue.status}${issue.type ? `, ${escape(issue.type)}` : ''}${issue.detail ? ` — ${escape(issue.detail)}` : ''}).`
+  if (issue.kind === 'generic') return `${t.genericError}${issue.detail ? ` — ${escape(issue.detail)}` : ''}`
+  return issue.kind === 'manual_check' ? t.manualCheck : t.invalidStep
 }
 
 const styles = `<style>

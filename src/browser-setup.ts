@@ -29,8 +29,9 @@ export type BrowserSetupSession = {
 }
 
 export type BrowserSetupIssue =
-  | { kind: 'upstream'; status: number; type?: string }
-  | { kind: 'manual_check' | 'invalid_step' | 'generic' }
+  | { kind: 'upstream'; status: number; type?: string; detail?: string }
+  | { kind: 'generic'; detail?: string }
+  | { kind: 'manual_check' | 'invalid_step' }
 
 class AuthError extends Error {
   constructor(readonly status: number, readonly problem: Json) {
@@ -49,11 +50,11 @@ function string(value: unknown): string | undefined {
 
 async function jsonResponse(response: Response): Promise<Json> {
   const bytes = await response.arrayBuffer()
-  if (bytes.byteLength > maxResponseBytes) throw new Error('Muse response too large')
+  if (bytes.byteLength > maxResponseBytes) throw new Error(`Muse response too large (HTTP ${response.status})`)
   if (response.ok && bytes.byteLength === 0) return {}
   let data: Json
   try { data = object(JSON.parse(new TextDecoder().decode(bytes))) }
-  catch { throw new Error('Invalid Muse response') }
+  catch { throw new Error(`Invalid Muse response (HTTP ${response.status})`) }
   if (!response.ok) throw new AuthError(response.status, data)
   return data
 }
@@ -139,7 +140,19 @@ export async function encryptWebPassword(password: string, keyId: number, public
   }
 }
 
-async function acceptCredentials(session: BrowserSetupSession, data: Json, sdkToken: string, request: Request) {
+async function acceptCredentials(session: BrowserSetupSession, data: Json, sdkToken: string, request: Request,
+  otpCode?: string, selectionAttempted = false) {
+  if (data.registration_state === 'account_selection_required' && Array.isArray(data.accounts)) {
+    const accounts = data.accounts.filter(entry => entry && typeof entry === 'object') as Json[]
+    const accountId = accounts[accounts.length - 1]?.account_id
+    if (selectionAttempted || (typeof accountId !== 'string' && typeof accountId !== 'number')) {
+      session.stage = 'error'
+      session.error = { kind: 'manual_check' }
+      return { session }
+    }
+    const selected = await postWeb(session, '/api/auth/native/select-account', { account_id: accountId }, request)
+    return acceptCredentials(session, selected, sdkToken, request, otpCode, true)
+  }
   if (data.checkpoint_required || data.checkpoint_url || data.reactivation_required || data.account_selection_required) {
     session.stage = 'error'
     session.error = { kind: 'manual_check' }
@@ -163,7 +176,13 @@ async function acceptCredentials(session: BrowserSetupSession, data: Json, sdkTo
   }
   const meta = data.auth_meta_session ? object(data.auth_meta_session) : null
   const frl = meta && string(meta.frl_access_token)
-  if (!frl) throw new Error('Muse login did not return a session')
+  if (!frl) {
+    const state = string(data.registration_state) ?? 'none'
+    const accounts = Array.isArray(data.accounts) ? data.accounts : null
+    const first = accounts?.[0]
+    const firstKeys = first && typeof first === 'object' ? Object.keys(first as Json).join(',') : ''
+    throw new Error(`Muse login did not return a session (state: ${state}; accounts: ${accounts ? accounts.length : 'no'}${firstKeys ? `; account keys: ${firstKeys}` : ''})`)
+  }
   const exchanged = await postHatch('/hatch/login', { frl_access_token: frl }, frl, request)
   const access = string(exchanged.access_token)
   if (!access || !string(exchanged.abra_user_id)) throw new Error('Muse did not return a Hatch session')
@@ -181,10 +200,7 @@ async function acceptCredentials(session: BrowserSetupSession, data: Json, sdkTo
 export async function beginWebLogin(session: BrowserSetupSession, contact: string, region: string,
   request: Request = fetch): Promise<BrowserSetupSession> {
   const restarted = await postWeb(session, '/api/auth/native/restart', {}, request)
-  if (!string(restarted.csrf_token)) {
-    session.csrf = undefined
-    throw new Error('Muse did not provide CSRF token')
-  }
+  if (!session.csrf) throw new Error('Muse did not provide CSRF token')
   let started = restarted
   if (restarted.flow_state === 'new') started = await postWeb(session, '/api/auth/native/start', {}, request)
   if (started.flow_state !== 'started') throw new Error('Unsupported Muse login flow')
@@ -234,16 +250,23 @@ export async function advanceWebLogin(session: BrowserSetupSession, action: stri
     throw new Error('Invalid login step')
   }
   session.error = undefined
-  return acceptCredentials(session, response, sdkToken, request)
+  return acceptCredentials(session, response, sdkToken, request, action === 'otp' ? value : undefined)
 }
 
 export function browserSetupError(error: unknown): BrowserSetupIssue {
   if (error instanceof AuthError) {
     const type = string(error.problem.type)
+    const rawDetail = string(error.problem.message) ?? string(error.problem.error_message) ??
+      string(error.problem.detail) ?? string(error.problem.error_description)
+    const detail = rawDetail?.replace(/[\u0000-\u001f\u007f]+/g, ' ').trim().slice(0, 480)
     return { kind: 'upstream', status: error.status,
-      ...(type && /^[A-Za-z0-9_./-]{1,100}$/.test(type) ? { type } : {}) }
+      ...(type && /^[A-Za-z0-9_./-]{1,100}$/.test(type) ? { type } : {}),
+      ...(detail ? { detail } : {}) }
   }
-  return error instanceof Error && error.message === 'Invalid login step'
-    ? { kind: 'invalid_step' }
-    : { kind: 'generic' }
+  if (error instanceof Error && error.message === 'Invalid login step') return { kind: 'invalid_step' }
+  if (error instanceof Error) {
+    const detail = error.message.replace(/[\u0000-\u001f\u007f]+/g, ' ').trim().slice(0, 480)
+    return { kind: 'generic', ...(detail ? { detail } : {}) }
+  }
+  return { kind: 'generic' }
 }
