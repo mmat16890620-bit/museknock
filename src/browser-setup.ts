@@ -146,7 +146,8 @@ function manualCheckDetail(data: Json): string {
   const state = typeof data.registration_state === 'string' ? data.registration_state : 'none'
   const accounts = Array.isArray(data.accounts) ? String(data.accounts.length) : 'none'
   const keys = Object.keys(data).join(',').slice(0, 200)
-  return `flags: ${flags.join(',') || 'none'}; state: ${state}; accounts: ${accounts}; keys: ${keys}`
+  const checkpoint = typeof data.checkpoint_url === 'string' ? data.checkpoint_url : 'none'
+  return `flags: ${flags.join(',') || 'none'}; state: ${state}; accounts: ${accounts}; keys: ${keys}; checkpoint: ${checkpoint}`
 }
 
 async function acceptCredentials(session: BrowserSetupSession, data: Json, sdkToken: string, request: Request,
